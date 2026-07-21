@@ -5,8 +5,9 @@ import {
   Pencil, ChevronLeft, ChevronRight, Calendar,
 } from 'lucide-react';
 
-import { getSales, getSalesToday, updateSalePayment } from '../services/api';
+import { getSales, updateSalePayment } from '../services/api';
 import { localYMD, normalizeSaleDate } from '../utils/dateUtils';
+import { smartCustomerSearch } from '../utils/searchUtils';
 
 /* ─────────────────────────────────────────────────────────────────────────────
    Design tokens — same palette as Sales / Products
@@ -276,8 +277,10 @@ export default function Loans({ dark, user }) {
   async function loadLoans() {
     try {
       setLoading(true); setError(null);
-      // ADMIN: fetch all sales; WORKER: fetch today's sales only (getSales returns 403 for workers)
-      const all = isAdmin ? await getSales() : await getSalesToday();
+      // Both ADMIN and WORKER fetch all sales here so workers can view and settle
+      // outstanding loans regardless of which day the sale was recorded
+      // (the /api/sales list endpoint permits both roles on the backend).
+      const all = await getSales();
       // Only show PARTIAL_LOAN sales (remainingLoan > 0)
       setLoans(all.filter(s => s.paymentStatus === 'PARTIAL_LOAN' && (s.remainingLoan ?? 0) > 0));
     } catch {
@@ -295,13 +298,10 @@ export default function Loans({ dark, user }) {
   const totalSaleValue   = loans.reduce((a, s) => a + (s.total        ?? 0), 0);
 
   /* ── Filter ─────────────────────────────────────────────────────────────── */
-  const filtered = loans.filter(s => {
-    const q = search.toLowerCase();
-    const matchSearch = !search
-      || s.customerName?.toLowerCase().includes(q)
-      || s.product?.name?.toLowerCase().includes(q);
+  const searchFiltered = smartCustomerSearch(loans, search, s => s.customerName, s => s.product?.name);
+  const filtered = searchFiltered.filter(s => {
     const matchDate = !dateFilter || normalizeSaleDate(s.saleDate) === dateFilter;
-    return matchSearch && matchDate;
+    return matchDate;
   });
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / rowsPerPage));

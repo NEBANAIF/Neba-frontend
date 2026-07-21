@@ -7,6 +7,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import { getSales, getSalesToday, recordSale, deleteSale, getProducts, getAnalyticsDashboard } from '../services/api';
 import { localYMD, normalizeSaleDate } from '../utils/dateUtils';
+import { smartCustomerSearch } from '../utils/searchUtils';
 
 /* ─────────────────────────────────────────────────────────────────────────────
    Design-system CSS — same token set as Dashboard & Products
@@ -494,11 +495,8 @@ export default function Sales({ dark, user }) {
   const totalRev   = allTimeSummary?.totalRevenue ?? sales.reduce((a, s) => a + (s.total || 0), 0);
   const totalItems = sales.reduce((a, s) => a + (s.quantity || 0), 0);
 
-  const filtered = sales.filter(s => {
-    const q = search.toLowerCase();
-    const matchSearch = !search || s.product?.name?.toLowerCase().includes(q) || s.customerName?.toLowerCase().includes(q);
-    return matchSearch && (!dateFilter || s.saleDate === dateFilter);
-  });
+  const searchFiltered = smartCustomerSearch(sales, search, s => s.customerName, s => s.product?.name);
+  const filtered = searchFiltered.filter(s => !dateFilter || s.saleDate === dateFilter);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / rowsPerPage));
   const paginated  = filtered.slice((page - 1) * rowsPerPage, page * rowsPerPage);
