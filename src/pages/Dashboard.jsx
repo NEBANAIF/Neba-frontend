@@ -147,16 +147,14 @@ const GLOBAL_CSS = `
   /* ── Responsive: small phone (≤480px) ── */
   @media (max-width:480px) {
     .abk-dash-pad    { padding: 0 0.5rem 1.5rem !important; }
-    .abk-dash-kpi-4  { grid-template-columns: repeat(2,minmax(0,1fr)) !important; }
+    .abk-dash-kpi-4 {
+      grid-template-columns: repeat(auto-fit, minmax(0, max-content)) !important;
+      justify-content: flex-start !important;
+    }
+    .abk-dash-kpi-4 > div { width: fit-content !important; }
     .abk-dash-nav-5  { grid-template-columns: repeat(2,minmax(0,1fr)) !important; }
-    .abk-dash-feat-4 { grid-template-columns: repeat(2,minmax(0,1fr)) !important; }
-    .abk-dash-greeting-name { font-size: 17px !important; }
-  }
-
-  /* ── Responsive: very small phone (≤380px) ── */
-  @media (max-width:380px) {
-    .abk-dash-kpi-4  { grid-template-columns: 1fr !important; }
     .abk-dash-feat-4 { grid-template-columns: 1fr !important; }
+    .abk-dash-greeting-name { font-size: 17px !important; }
   }
   /* iOS: prevent zoom on input focus */
   @media (max-width:767px) {
@@ -260,7 +258,7 @@ function KpiCard({ label, value, sub, Icon, stripeColor, iconBg, iconColor, prog
       <div className="abk-serif" style={{
         fontSize:24,
   fontWeight:700, color:iconColor, letterSpacing:-0.3,marginBottom:4, 
-  whiteSpace:'nowrap', overflow:'hidden',textOverflow:'ellipsis', lineHeight:1.15,
+  whiteSpace:'normal', overflow:'visible', wordBreak:'break-word', lineHeight:1.15,
       }}>{value}</div>
       <div style={{ fontSize:11, color:'var(--ink-light)', fontWeight:400 }}>{label}</div>
       <div style={{ fontSize:10.5, color:'var(--ink-faint)', fontWeight:300, marginTop:1 }}>{sub}</div>

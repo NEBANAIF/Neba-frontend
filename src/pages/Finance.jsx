@@ -170,9 +170,9 @@ const FINANCE_CSS = `
       overflow-x: auto !important;
       -webkit-overflow-scrolling: touch !important;
     }
-    .abk-fin-table-wrap.abk-fin-scroll-table table { min-width: 560px !important; table-layout: auto !important; }
+    .abk-fin-table-wrap.abk-fin-scroll-table table { min-width: 720px !important; table-layout: auto !important; }
     .abk-fin-table-wrap.abk-fin-scroll-table th { padding: 8px 8px !important; font-size: 9px !important; }
-    .abk-fin-table-wrap.abk-fin-scroll-table td { padding: 8px 8px !important; font-size: 11.5px !important; }
+    .abk-fin-table-wrap.abk-fin-scroll-table td { padding: 8px 8px !important; font-size: 11.5px !important; white-space: nowrap !important; }
 
     /* ── Expenses table: horizontal scroll — full table, swipe to see all columns ──
        NOTE: explicit px min-width (not width:max-content) — max-content is unreliable
@@ -746,13 +746,13 @@ export default function Finance({ dark }) {
                   <tbody>
                     {periodRows.map(row => (
                       <tr key={row.key} className="abk-period-row" onClick={() => setPeriod(row.key)} style={{ borderBottom:'1px solid var(--border-light)', background: period===row.key ? 'var(--blue-bg)' : 'var(--card)' }}>
-                        <td style={{ padding:'11px 14px', fontSize:12, fontWeight:600, color:period===row.key?'var(--blue)':'var(--ink-light)' }}>{period===row.key && '→ '}{row.label}</td>
-                        <td style={{ padding:'11px 14px' }}><span className="abk-serif" style={{ fontSize:13, fontWeight:600, color:'var(--green)' }}>${fmt(row.revenue)}</span></td>
-                        <td style={{ padding:'11px 14px', fontSize:12, color:'var(--amber)', fontWeight:300 }}>−${fmt(row.cogs)}</td>
-                        <td style={{ padding:'11px 14px' }}><span className="abk-serif" style={{ fontSize:13, fontWeight:600, color:row.grossProfit>=0?'var(--blue)':'var(--red-text)' }}>{row.grossProfit>=0?'':'-'}${fmt(row.grossProfit)}</span></td>
-                        <td style={{ padding:'11px 14px', fontSize:12, color:'var(--red-text)', fontWeight:300 }}>−${fmt(row.totalExpenses)}</td>
-                        <td style={{ padding:'11px 14px' }}><span className="abk-serif" style={{ fontSize:14, fontWeight:700, color:row.netProfit>=0?'var(--green)':'var(--red-text)' }}>{row.netProfit>=0?'+':'−'}${fmt(row.netProfit)}</span></td>
-                        <td style={{ padding:'11px 14px' }}>
+                        <td style={{ padding:'11px 14px', fontSize:12, fontWeight:600, color:period===row.key?'var(--blue)':'var(--ink-light)', whiteSpace:'nowrap' }}>{period===row.key && '→ '}{row.label}</td>
+                        <td style={{ padding:'11px 14px', whiteSpace:'nowrap' }}><span className="abk-serif" style={{ fontSize:13, fontWeight:600, color:'var(--green)' }}>${fmt(row.revenue)}</span></td>
+                        <td style={{ padding:'11px 14px', fontSize:12, color:'var(--amber)', fontWeight:300, whiteSpace:'nowrap' }}>−${fmt(row.cogs)}</td>
+                        <td style={{ padding:'11px 14px', whiteSpace:'nowrap' }}><span className="abk-serif" style={{ fontSize:13, fontWeight:600, color:row.grossProfit>=0?'var(--blue)':'var(--red-text)' }}>{row.grossProfit>=0?'':'-'}${fmt(row.grossProfit)}</span></td>
+                        <td style={{ padding:'11px 14px', fontSize:12, color:'var(--red-text)', fontWeight:300, whiteSpace:'nowrap' }}>−${fmt(row.totalExpenses)}</td>
+                        <td style={{ padding:'11px 14px', whiteSpace:'nowrap' }}><span className="abk-serif" style={{ fontSize:14, fontWeight:700, color:row.netProfit>=0?'var(--green)':'var(--red-text)' }}>{row.netProfit>=0?'+':'−'}${fmt(row.netProfit)}</span></td>
+                        <td style={{ padding:'11px 14px', whiteSpace:'nowrap' }}>
                           <span style={{ fontSize:11, fontWeight:600, padding:'2px 10px', borderRadius:20, background:row.netMargin>=0?'var(--green-bg)':'var(--red-bg)', color:row.netMargin>=0?'var(--green)':'var(--red-text)', border:`1px solid ${row.netMargin>=0?'rgba(29,158,117,.25)':'var(--red-border)'}` }}>
                             {row.netMargin.toFixed(1)}%
                           </span>

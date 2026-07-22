@@ -111,6 +111,18 @@ export const addStock = adjustStock;
 // recordSale()    → ADMIN + WORKER (create new sale)
 // deleteSale()    → ADMIN only (returns 403 for WORKER)
 export const getSales      = ()     => api.get('/sales').then(r => r.data);
+
+// Paginated + searchable sales list — powers the Sales page table.
+// Only fetches one page of rows at a time instead of the whole sales
+// history, so it stays fast regardless of how large the table gets.
+// Returns Spring's Page shape: { content, totalElements, totalPages, number, size, ... }
+export const getSalesPage = ({ page = 0, size = 20, search = '', date = '' } = {}) => {
+  const params = { page, size };
+  if (search) params.search = search;
+  if (date) params.date = date;
+  return api.get('/sales/page', { params }).then(r => r.data);
+};
+
 export const getSalesToday = ()     => api.get('/sales/today').then(r => r.data);
 export const getSaleById   = (id)   => api.get(`/sales/${id}`).then(r => r.data);
 export const recordSale    = (data) => api.post('/sales', data).then(r => r.data);

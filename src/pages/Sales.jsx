@@ -5,9 +5,8 @@ import {
   XCircle, Calendar, CheckCircle,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { getSales, getSalesToday, recordSale, deleteSale, getProducts, getAnalyticsDashboard } from '../services/api';
-import { localYMD, normalizeSaleDate } from '../utils/dateUtils';
-import { smartCustomerSearch } from '../utils/searchUtils';
+import { getSalesPage, getSalesToday, recordSale, deleteSale, getProducts, getAnalyticsDashboard } from '../services/api';
+import { localYMD } from '../utils/dateUtils';
 
 /* ─────────────────────────────────────────────────────────────────────────────
    Design-system CSS — same token set as Dashboard & Products
@@ -147,12 +146,11 @@ const SALES_CSS = `
 
   @media (max-width:480px) {
     .abk-sales-pad { padding: 0.75rem 0.5rem 2rem !important; }
-    /* Keep KPI at 2-col even on small phones */
-    .abk-sales-kpi-3 { grid-template-columns: repeat(2,minmax(0,1fr)) !important; }
-  }
-
-  @media (max-width:380px) {
-    .abk-sales-kpi-3 { grid-template-columns: 1fr !important; }
+    .abk-sales-kpi-3 {
+      grid-template-columns: repeat(auto-fit, minmax(0, max-content)) !important;
+      justify-content: flex-start !important;
+    }
+    .abk-sales-kpi-3 > div { width: fit-content !important; }
   }
   /* iOS: prevent zoom on input focus */
   @media (max-width:767px) {
@@ -285,8 +283,8 @@ function KpiCard({ label, value, sub, Icon, stripeColor, iconBg, iconColor, prog
       </div>
       <div className="abk-serif" style={{
         fontSize:24, fontWeight:700, color:iconColor, letterSpacing:-0.3,
-        marginBottom:4, whiteSpace:'nowrap', overflow:'hidden',
-        textOverflow:'ellipsis', lineHeight:1.15,
+        marginBottom:4, whiteSpace:'normal', overflow:'visible',
+        wordBreak:'break-word', lineHeight:1.15,
       }}>{value}</div>
       <div style={{ fontSize:11, color:'var(--ink-light)', fontWeight:400 }}>{label}</div>
       <div style={{ fontSize:10.5, color:'var(--ink-faint)', fontWeight:300, marginTop:1 }}>{sub}</div>
@@ -442,9 +440,13 @@ export default function Sales({ dark, user }) {
     return () => { const el = document.getElementById(id); if (el) el.remove(); };
   }, []);
 
-  const [sales,          setSales]          = useState([]);
+  const [tableSales,     setTableSales]     = useState([]);   // current page of rows, from the server
+  const [totalElements,  setTotalElements]  = useState(0);    // total matching rows, across all pages
+  const [totalPages,     setTotalPages]     = useState(1);
+  const [tableLoading,   setTableLoading]   = useState(false); // spinner scoped to the table only
+  const [todaySales,     setTodaySales]     = useState([]);   // today's rows, via the small /sales/today endpoint
   const [products,       setProducts]       = useState([]);
-  const [loading,        setLoading]        = useState(true);
+  const [loading,        setLoading]        = useState(true); // initial full-page load only
   const [error,          setError]          = useState(null);
   const [search,         setSearch]         = useState('');
   const [dateFilter,     setDateFilter]     = useState('');
@@ -455,9 +457,12 @@ export default function Sales({ dark, user }) {
   const [deleteConfirm,  setDeleteConfirm]  = useState(null);
   const [successMsg,     setSuccessMsg]     = useState('');
   const [form,           setForm]           = useState({ productId:'', quantity:1, price:'', customerName:'', paymentStatus:'PAID_FULL', paidAmount:'' });
-  const [periodSummary,  setPeriodSummary]  = useState(null);
   const [allTimeSummary, setAllTimeSummary] = useState(null);
 
+  // ── Initial load: today's stats + products + (admin) all-time totals ──────
+  // Uses the small, always-fast /api/sales/today endpoint for the "Today"
+  // KPI cards instead of loading the whole sales table just to filter it
+  // down to today's rows in the browser.
   useEffect(() => { if (user !== undefined) loadAll(); }, [user]);
 
   async function loadAll() {
@@ -465,41 +470,60 @@ export default function Sales({ dark, user }) {
       setLoading(true); setError(null);
       const today = localYMD();
 
-      if (isWorker) {
-        // WORKER: only fetch today's sales + products (no analytics access)
-        const [s, p] = await Promise.all([
-          getSalesToday(),   // /api/sales/today — allowed for workers
-          getProducts(),
-        ]);
-        setSales(s); setProducts(p);
-        setPeriodSummary(null); setAllTimeSummary(null);
+      const [ts, p] = await Promise.all([
+        getSalesToday(),   // /api/sales/today — small, permits both ADMIN and WORKER
+        getProducts(),
+      ]);
+      setTodaySales(ts); setProducts(p);
+
+      if (isAdmin) {
+        // Total Revenue / Total Items are ADMIN-only (hidden from workers below),
+        // and come from a server-computed aggregate — never from summing a
+        // full sales list in the browser.
+        const allAgg = await getAnalyticsDashboard({ from:'2000-01-01', to:today, granularity:'month', includeSeries:false }).catch(() => null);
+        setAllTimeSummary(allAgg);
       } else {
-        // ADMIN: fetch all sales + analytics
-        const [s, p, agg, allAgg] = await Promise.all([
-          getSales(),
-          getProducts(),
-          getAnalyticsDashboard({ from:today, to:today, granularity:'day', includeSeries:false }).catch(() => null),
-          getAnalyticsDashboard({ from:'2000-01-01', to:today, granularity:'month', includeSeries:false }).catch(() => null),
-        ]);
-        setSales(s); setProducts(p); setPeriodSummary(agg); setAllTimeSummary(allAgg);
+        setAllTimeSummary(null);
       }
     } catch { setError(t('sales.errorConnect')); }
     finally { setLoading(false); }
   }
 
+  // ── Table: one page at a time from the server ──────────────────────────────
+  // Re-fetches whenever the page, rows-per-page, date filter, or (debounced)
+  // search text changes. This is the piece that actually scales: no matter
+  // how many sales pile up over months/years, this only ever asks the
+  // database for `rowsPerPage` rows at a time — the payload size and query
+  // cost stay flat instead of growing with the whole table.
+  async function loadTablePage() {
+    try {
+      setTableLoading(true);
+      const res = await getSalesPage({ page: page - 1, size: rowsPerPage, search, date: dateFilter });
+      setTableSales(res.content ?? []);
+      setTotalElements(res.totalElements ?? 0);
+      setTotalPages(Math.max(1, res.totalPages ?? 1));
+    } catch {
+      setTableSales([]); setTotalElements(0); setTotalPages(1);
+    } finally {
+      setTableLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (user === undefined) return;
+    // Debounce search typing so we're not firing a request per keystroke —
+    // date/page/rowsPerPage changes are already deliberate clicks, so those
+    // fire immediately.
+    const t = setTimeout(loadTablePage, search ? 350 : 0);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, page, rowsPerPage, search, dateFilter]);
+
   function showSuccess(msg) { setSuccessMsg(msg); setTimeout(() => setSuccessMsg(''), 3200); }
 
-  const todayStr   = localYMD();
-  const todaySales = sales.filter(s => normalizeSaleDate(s.saleDate) === todayStr);
-  const todayRev   = periodSummary?.totalRevenue  ?? todaySales.reduce((a, s) => a + (s.total || 0), 0);
-  const totalRev   = allTimeSummary?.totalRevenue ?? sales.reduce((a, s) => a + (s.total || 0), 0);
-  const totalItems = sales.reduce((a, s) => a + (s.quantity || 0), 0);
-
-  const searchFiltered = smartCustomerSearch(sales, search, s => s.customerName, s => s.product?.name);
-  const filtered = searchFiltered.filter(s => !dateFilter || s.saleDate === dateFilter);
-
-  const totalPages = Math.max(1, Math.ceil(filtered.length / rowsPerPage));
-  const paginated  = filtered.slice((page - 1) * rowsPerPage, page * rowsPerPage);
+  const todayRev   = todaySales.reduce((a, s) => a + (s.total || 0), 0);
+  const totalRev   = allTimeSummary?.totalRevenue  ?? 0;   // server-computed aggregate, ADMIN only
+  const totalItems = allTimeSummary?.totalQuantity ?? 0;   // server-computed aggregate, ADMIN only
 
   function openModal() { setForm({ productId:'', quantity:1, price:'', customerName:'', paymentStatus:'PAID_FULL', paidAmount:'' }); setShowModal(true); }
 
@@ -537,13 +561,13 @@ export default function Sales({ dark, user }) {
         remainingLoan,
         recordedBy:    user?.name || 'Staff',
       });
-      setShowModal(false); showSuccess(t('sales.successRecord')); await loadAll();
+      setShowModal(false); showSuccess(t('sales.successRecord')); await Promise.all([loadAll(), loadTablePage()]);
     } catch (e) { alert(e.message || t('sales.errorRecord')); }
     finally { setSaving(false); }
   }
 
   async function handleDelete(id) {
-    try { await deleteSale(id); setDeleteConfirm(null); showSuccess(t('sales.successDelete')); await loadAll(); }
+    try { await deleteSale(id); setDeleteConfirm(null); showSuccess(t('sales.successDelete')); await Promise.all([loadAll(), loadTablePage()]); }
     catch { alert(t('sales.errorDelete')); }
   }
 
@@ -625,7 +649,7 @@ export default function Sales({ dark, user }) {
                 fontSize:11, color: dark ? '#FBBf24' : '#92400E',
               }}>
                 <span style={{ fontWeight:600 }}>👷 Worker mode</span>
-                <span style={{ fontWeight:300 }}>· Today's sales only · No delete access</span>
+                <span style={{ fontWeight:300 }}>· No delete access</span>
               </div>
             )}
           </div>
@@ -657,7 +681,7 @@ export default function Sales({ dark, user }) {
         </div>
 
         {/* ── KPI Cards ─────────────────────────────────────────────────── */}
-        <div className="abk-sales-kpi-3" style={{ display:'grid', gridTemplateColumns:'repeat(3,minmax(0,1fr))', gap:10, marginBottom:'1.1rem' }}>
+        <div className="abk-sales-kpi-3" style={{ display:'grid', gridTemplateColumns:`repeat(${isWorker ? 2 : 3},minmax(0,1fr))`, gap:10, marginBottom:'1.1rem' }}>
           <KpiCard
             label={t('sales.todayRevenue')} value={`$${fmt(todayRev)}`}
             sub={`${todaySales.length} ${t('sales.transactionsToday')}`}
@@ -670,12 +694,15 @@ export default function Sales({ dark, user }) {
             Icon={ShoppingCart} stripeColor="var(--blue)" iconBg="var(--blue-bg)" iconColor="var(--blue)"
             progPct={todaySales.length > 0 ? 55 : 2} delay=".13s"
           />
-          <KpiCard
-            label={t('sales.totalRevenue')} value={`$${fmt(totalRev)}`}
-            sub={`${totalItems} ${t('sales.totalItemsSold')}`}
-            Icon={TrendingUp} stripeColor="var(--purple)" iconBg="var(--purple-bg)" iconColor="var(--purple)"
-            progPct={82} delay=".20s"
-          />
+          {/* Total Revenue — ADMIN only; workers don't see cumulative revenue */}
+          {!isWorker && (
+            <KpiCard
+              label={t('sales.totalRevenue')} value={`$${fmt(totalRev)}`}
+              sub={`${totalItems} ${t('sales.totalItemsSold')}`}
+              Icon={TrendingUp} stripeColor="var(--purple)" iconBg="var(--purple-bg)" iconColor="var(--purple)"
+              progPct={82} delay=".20s"
+            />
+          )}
         </div>
 
         {/* ── Search & Filter ───────────────────────────────────────────── */}
@@ -716,12 +743,13 @@ export default function Sales({ dark, user }) {
           }}>
             <div className="abk-serif" style={{ fontSize:14, fontWeight:500, color:'var(--ink)' }}>{t('sales.salesHistory')}</div>
             <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-              {(search || dateFilter) && (
-                <span style={{ fontSize:11, color:'var(--green)', fontWeight:600 }}>
-                  Total: ${filtered.reduce((s, r) => s + (r.total || 0), 0).toLocaleString('en-US', { minimumFractionDigits:2, maximumFractionDigits:2 })}
-                </span>
-              )}
-              <span style={{ fontSize:11, color:'var(--ink-faint)', fontWeight:300 }}>{filtered.length} {t('dashboard.records')}</span>
+              {/* NOTE: the old "sum of all filtered rows" badge is gone here — with
+                  server-side pagination, only the current page's rows are ever in
+                  the browser, so summing them client-side would silently show the
+                  wrong number (just this page's total, mislabeled as the filtered
+                  total). Showing the accurate figure would need a small dedicated
+                  SUM query on the backend — worth adding if this number is missed. */}
+              <span style={{ fontSize:11, color:'var(--ink-faint)', fontWeight:300 }}>{totalElements} {t('dashboard.records')}</span>
             </div>
           </div>
 
@@ -752,7 +780,13 @@ export default function Sales({ dark, user }) {
                 </tr>
               </thead>
               <tbody>
-                {paginated.length === 0 ? (
+                {tableLoading ? (
+                  <tr>
+                    <td colSpan={isAdmin ? 8 : 7} style={{ textAlign:'center', padding:'3.5rem 0' }}>
+                      <div style={{ width:24, height:24, border:'3px solid var(--border)', borderTopColor:'var(--green)', borderRadius:'50%', animation:'spin 1s linear infinite', margin:'0 auto' }} />
+                    </td>
+                  </tr>
+                ) : tableSales.length === 0 ? (
                   <tr>
                     <td colSpan={isAdmin ? 8 : 7} style={{ textAlign:'center', padding:'3.5rem 0' }}>
                       <ShoppingCart size={34} style={{ color:'var(--border)', margin:'0 auto 10px', display:'block' }} />
@@ -761,7 +795,7 @@ export default function Sales({ dark, user }) {
                       </p>
                     </td>
                   </tr>
-                ) : paginated.map(s => (
+                ) : tableSales.map(s => (
                   <tr key={s.id} className="abk-row-hover" style={{ borderBottom:'1px solid var(--border-light)', background:'var(--card)' }}>
                     {/* Date / time */}
                     <td data-label="Date & Time" style={{ padding:'11px 14px' }}>
@@ -864,7 +898,7 @@ export default function Sales({ dark, user }) {
               ))}
             </div>
             <div style={{ display:'flex', alignItems:'center', gap:8, fontSize:11, color:'var(--ink-faint)', fontWeight:300 }}>
-              <span>{filtered.length === 0 ? 0 : (page-1)*rowsPerPage+1}–{Math.min(page*rowsPerPage, filtered.length)} / {filtered.length}</span>
+              <span>{totalElements === 0 ? 0 : (page-1)*rowsPerPage+1}–{Math.min(page*rowsPerPage, totalElements)} / {totalElements}</span>
               {[
                 { Icon:ChevronLeft,  action:() => setPage(p => Math.max(1,p-1)),         disabled:page===1 },
                 { Icon:ChevronRight, action:() => setPage(p => Math.min(totalPages,p+1)), disabled:page===totalPages },
