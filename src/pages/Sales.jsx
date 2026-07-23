@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useLayoutEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Search, Plus, Trash2, DollarSign, ShoppingCart,
   TrendingUp, ChevronLeft, ChevronRight, X, RefreshCw,
@@ -132,7 +132,8 @@ const SALES_CSS = `
   /* ── Responsive: phone ── */
   @media (max-width:767px) {
     .abk-sales-pad    { padding: 1rem 0.75rem 3rem !important; }
-    .abk-sales-kpi-3  { grid-template-columns: repeat(2,minmax(0,1fr)) !important; }
+    /* Stacked full-width cards on phone — one KPI per row, easier to read */
+    .abk-sales-kpi-3  { grid-template-columns: 1fr !important; }
     .abk-sales-filter { flex-direction: column !important; }
     .abk-sales-filter > * { width: 100% !important; }
     .abk-sales-header { flex-direction: column !important; align-items: flex-start !important; gap: 10px !important; }
@@ -146,11 +147,7 @@ const SALES_CSS = `
 
   @media (max-width:480px) {
     .abk-sales-pad { padding: 0.75rem 0.5rem 2rem !important; }
-    .abk-sales-kpi-3 {
-      grid-template-columns: repeat(auto-fit, minmax(0, max-content)) !important;
-      justify-content: flex-start !important;
-    }
-    .abk-sales-kpi-3 > div { width: fit-content !important; }
+    .abk-sales-kpi-3 { grid-template-columns: 1fr !important; }
   }
   /* iOS: prevent zoom on input focus */
   @media (max-width:767px) {
@@ -264,52 +261,6 @@ function BtnSecondary({ onClick, children }) {
   );
 }
 
-/**
- * Renders text that shrinks its own font-size until it fits on one line
- * inside its parent — instead of wrapping (which breaks numbers apart
- * mid-digit, e.g. "$1,3 / 01,2 / 89,0") or truncating with "..." (which
- * hides real data). KPI values here range from "$0.00" to
- * "$1,301,289,000.00" and no single fixed font-size handles both, and
- * no CSS breakpoint can anticipate every card width/device — this
- * measures the actual rendered width and adjusts, so it's correct
- * regardless of screen size, card layout, or zoom level.
- */
-function FitText({ children, max = 24, min = 11, style }) {
-  const spanRef = useRef(null);
-  const [fontSize, setFontSize] = useState(max);
-
-  useLayoutEffect(() => {
-    const el = spanRef.current;
-    if (!el || !el.parentElement) return;
-    const container = el.parentElement;
-
-    function fit() {
-      let size = max;
-      el.style.fontSize = size + 'px';
-      // Step down one px at a time until the text fits the available
-      // width, or we hit the minimum still-readable size.
-      while (el.scrollWidth > container.clientWidth && size > min) {
-        size -= 1;
-        el.style.fontSize = size + 'px';
-      }
-      setFontSize(size);
-    }
-
-    fit();
-    // Re-measure if the card itself is resized — window resize,
-    // orientation change, sidebar collapse, etc. — not just on mount.
-    const ro = new ResizeObserver(fit);
-    ro.observe(container);
-    return () => ro.disconnect();
-  }, [children, max, min]);
-
-  return (
-    <span ref={spanRef} style={{ ...style, fontSize, whiteSpace:'nowrap', display:'inline-block', maxWidth:'100%' }}>
-      {children}
-    </span>
-  );
-}
-
 function KpiCard({ label, value, sub, Icon, stripeColor, iconBg, iconColor, progPct, delay }) {
   return (
     <div className="abk-anim-fade-up" style={{
@@ -327,9 +278,11 @@ function KpiCard({ label, value, sub, Icon, stripeColor, iconBg, iconColor, prog
       }}>
         <Icon size={15} color={iconColor} />
       </div>
-      <div className="abk-serif" style={{ marginBottom:4, lineHeight:1.15 }}>
-        <FitText max={24} min={13} style={{ fontWeight:700, color:iconColor, letterSpacing:-0.3 }}>{value}</FitText>
-      </div>
+      <div className="abk-serif" style={{
+        fontSize:24, fontWeight:700, color:iconColor, letterSpacing:-0.3,
+        marginBottom:4, whiteSpace:'nowrap', overflow:'hidden',
+        textOverflow:'ellipsis', lineHeight:1.15,
+      }}>{value}</div>
       <div style={{ fontSize:11, color:'var(--ink-light)', fontWeight:400 }}>{label}</div>
       <div style={{ fontSize:10.5, color:'var(--ink-faint)', fontWeight:300, marginTop:1 }}>{sub}</div>
       <div style={{ height:2, background:'var(--cream-deep)', borderRadius:2, overflow:'hidden', marginTop:9 }}>

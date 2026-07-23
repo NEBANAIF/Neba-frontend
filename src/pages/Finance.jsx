@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, useLayoutEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   TrendingUp, TrendingDown, DollarSign, Plus, Trash2,
@@ -141,7 +141,8 @@ const FINANCE_CSS = `
     .abk-fin-pad { padding: 1rem 0.75rem 3rem !important; box-sizing: border-box !important; width: 100% !important; }
 
     /* Grids */
-    .abk-fin-kpi-3  { grid-template-columns: repeat(2,minmax(0,1fr)) !important; }
+    /* Stacked full-width cards on phone — one KPI per row, easier to read */
+    .abk-fin-kpi-3  { grid-template-columns: 1fr !important; }
     .abk-fin-grid-2 { grid-template-columns: 1fr !important; }
 
     /* Kill inline gridColumn span — period table must not span 2 cols on 1-col grid */
@@ -205,14 +206,8 @@ const FINANCE_CSS = `
     }
     .abk-fin-formula-val { font-size: 16px !important; }
 
-    /* KPI mini-cards: value truncates */
+    /* KPI mini-cards: prevent overflow (value auto-shrinks via FitText) */
     .abk-fin-kpi-mini { min-width: 0 !important; overflow: hidden !important; }
-    .abk-fin-kpi-mini .abk-fin-kpi-val {
-      overflow: hidden !important;
-      text-overflow: ellipsis !important;
-      white-space: nowrap !important;
-      font-size: 13px !important;
-    }
 
     /* Bar rows: label + value must not overflow */
     .abk-fin-bar-row {
@@ -229,10 +224,6 @@ const FINANCE_CSS = `
 
   @media (max-width:480px) {
     .abk-fin-pad { padding: 0.75rem 0.5rem 2rem !important; }
-    .abk-fin-kpi-3 { grid-template-columns: repeat(2,minmax(0,1fr)) !important; }
-  }
-
-  @media (max-width:380px) {
     .abk-fin-kpi-3 { grid-template-columns: 1fr !important; }
   }
 
@@ -340,6 +331,45 @@ function BtnSecondary({ onClick, children }) {
 }
 
 /* ── KPI card (same as Products/Sales) ───────────────────────────────────── */
+/**
+ * Renders text that shrinks its own font-size until it fits on one line
+ * inside its parent — instead of truncating with "..." (which hides real
+ * data). KPI values here can range from "$0.00" to "$1,302,399,000.00" and
+ * no single fixed font-size handles both, so this measures the actual
+ * rendered width and adjusts, matching the pattern used on Sales/Products.
+ */
+function FitText({ children, max = 22, min = 12, style }) {
+  const spanRef = useRef(null);
+  const [fontSize, setFontSize] = useState(max);
+
+  useLayoutEffect(() => {
+    const el = spanRef.current;
+    if (!el || !el.parentElement) return;
+    const container = el.parentElement;
+
+    function fit() {
+      let size = max;
+      el.style.fontSize = size + 'px';
+      while (el.scrollWidth > container.clientWidth && size > min) {
+        size -= 1;
+        el.style.fontSize = size + 'px';
+      }
+      setFontSize(size);
+    }
+
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(container);
+    return () => ro.disconnect();
+  }, [children, max, min]);
+
+  return (
+    <span ref={spanRef} style={{ ...style, fontSize, whiteSpace:'nowrap', display:'inline-block', maxWidth:'100%' }}>
+      {children}
+    </span>
+  );
+}
+
 function KpiCard({ label, value, sub, Icon, stripeColor, iconBg, iconColor, progPct, delay }) {
   return (
     <div className="abk-anim-fade-up" style={{ background:'var(--card)', border:'1px solid var(--border)', borderRadius:14, padding:'1.1rem 1.1rem .9rem', position:'relative', overflow:'hidden', transition:'background .3s, border-color .3s', animationDelay:delay, boxShadow:'0 1px 4px rgba(0,0,0,.06)' }}>
@@ -347,7 +377,9 @@ function KpiCard({ label, value, sub, Icon, stripeColor, iconBg, iconColor, prog
       <div style={{ width:32, height:32, borderRadius:8, background:iconBg, display:'flex', alignItems:'center', justifyContent:'center', marginBottom:9, marginTop:4 }}>
         <Icon size={15} color={iconColor} />
       </div>
-      <div className="abk-serif" style={{ fontSize:22, fontWeight:700, color:iconColor, letterSpacing:-0.3, marginBottom:4, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', lineHeight:1.15 }}>{value}</div>
+      <div className="abk-serif" style={{ marginBottom:4, lineHeight:1.15 }}>
+        <FitText max={22} min={13} style={{ fontWeight:700, color:iconColor, letterSpacing:-0.3 }}>{value}</FitText>
+      </div>
       <div style={{ fontSize:11, color:'var(--ink-light)', fontWeight:400 }}>{label}</div>
       <div style={{ fontSize:10.5, color:'var(--ink-faint)', fontWeight:300, marginTop:1 }}>{sub}</div>
       <div style={{ height:2, background:'var(--cream-deep)', borderRadius:2, overflow:'hidden', marginTop:9 }}>
@@ -612,7 +644,9 @@ export default function Finance({ dark }) {
                 { val:`$${fmt(fin.totalExpenses)}`, label:t('finance.expensesLabel'), sub:`${periodExpenses.length} ${t('finance.expenseCount')}`,color:'var(--red-text)',prefix:'−' },
               ].map(item => (
                 <div key={item.label} className="abk-fin-kpi-mini" style={{ background:'var(--card)', borderRadius:10, padding:'10px 12px', border:'1px solid var(--border-light)', minWidth:0, overflow:'hidden' }}>
-                  <div className="abk-fin-kpi-val abk-serif" style={{ fontSize:16, fontWeight:600, color:item.color, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{item.prefix}{item.val}</div>
+                  <div className="abk-fin-kpi-val abk-serif" style={{ marginBottom:0 }}>
+                    <FitText max={16} min={11} style={{ fontWeight:600, color:item.color }}>{item.prefix}{item.val}</FitText>
+                  </div>
                   <div style={{ fontSize:11, color:'var(--ink-light)', marginTop:2, fontWeight:500 }}>{item.label}</div>
                   <div style={{ fontSize:10.5, color:'var(--ink-faint)', fontWeight:300 }}>{item.sub}</div>
                 </div>

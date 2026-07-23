@@ -120,11 +120,15 @@ const LOANS_CSS = `
   }
   @media (max-width:767px) {
     .abk-loans-pad  { padding: 1rem 0.75rem 3rem !important; }
-    .abk-loans-kpi  { grid-template-columns: repeat(2,minmax(0,1fr)) !important; }
+    /* Stacked full-width cards on phone — one KPI per row, easier to read */
+    .abk-loans-kpi  { grid-template-columns: 1fr !important; }
     .abk-loans-filter { flex-direction: column !important; }
     .abk-loans-filter > * { width: 100% !important; }
     .abk-loans-table-wrap { overflow-x: auto !important; -webkit-overflow-scrolling: touch !important; }
     .abk-loans-table-wrap table { min-width: 760px !important; }
+  }
+  @media (max-width:480px) {
+    .abk-loans-kpi { grid-template-columns: 1fr !important; }
   }
   @media (max-width:767px) {
     input, select, textarea { font-size: 16px !important; }

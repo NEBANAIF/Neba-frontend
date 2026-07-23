@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useLayoutEffect } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Package, ShoppingCart, TrendingUp, DollarSign,
   AlertTriangle, RefreshCw, Clock, CheckCircle,
@@ -136,6 +136,8 @@ const GLOBAL_CSS = `
   @media (max-width:767px) {
     .abk-dash-pad    { padding: 0 0.75rem 2rem !important; }
     .abk-dash-kpi-4  { grid-template-columns: repeat(2,minmax(0,1fr)) !important; }
+    /* Revenue cards (today/total) span both columns — full width, stacked */
+    .abk-dash-kpi-full { grid-column: 1 / -1 !important; }
     .abk-dash-nav-5  { grid-template-columns: repeat(2,minmax(0,1fr)) !important; }
     .abk-dash-mid    { grid-template-columns: 1fr !important; }
     .abk-dash-bot-3  { grid-template-columns: 1fr !important; }
@@ -147,11 +149,6 @@ const GLOBAL_CSS = `
   /* ── Responsive: small phone (≤480px) ── */
   @media (max-width:480px) {
     .abk-dash-pad    { padding: 0 0.5rem 1.5rem !important; }
-    .abk-dash-kpi-4 {
-      grid-template-columns: repeat(auto-fit, minmax(0, max-content)) !important;
-      justify-content: flex-start !important;
-    }
-    .abk-dash-kpi-4 > div { width: fit-content !important; }
     .abk-dash-nav-5  { grid-template-columns: repeat(2,minmax(0,1fr)) !important; }
     .abk-dash-feat-4 { grid-template-columns: 1fr !important; }
     .abk-dash-greeting-name { font-size: 17px !important; }
@@ -239,57 +236,18 @@ function DonutChart({ segments, total }) {
   );
 }
 
-/**
- * Renders text that shrinks its own font-size until it fits on one line
- * inside its parent — instead of wrapping (which breaks numbers apart
- * mid-digit, e.g. "$1,3 / 01,2 / 89,0") or truncating with "..." (which
- * hides real data). KPI values here range from "$0.00" to
- * "$1,301,289,000.00" and no single fixed font-size handles both, and
- * no CSS breakpoint can anticipate every card width/device — this
- * measures the actual rendered width and adjusts, so it's correct
- * regardless of screen size, card layout, or zoom level.
- */
-function FitText({ children, max = 24, min = 11, style }) {
-  const spanRef = useRef(null);
-  const [fontSize, setFontSize] = useState(max);
 
-  useLayoutEffect(() => {
-    const el = spanRef.current;
-    if (!el || !el.parentElement) return;
-    const container = el.parentElement;
-
-    function fit() {
-      let size = max;
-      el.style.fontSize = size + 'px';
-      while (el.scrollWidth > container.clientWidth && size > min) {
-        size -= 1;
-        el.style.fontSize = size + 'px';
-      }
-      setFontSize(size);
-    }
-
-    fit();
-    const ro = new ResizeObserver(fit);
-    ro.observe(container);
-    return () => ro.disconnect();
-  }, [children, max, min]);
-
+function KpiCard({ label, value, sub, Icon, stripeColor, iconBg, iconColor, progPct, delay, className = '' }) {
   return (
-    <span ref={spanRef} style={{ ...style, fontSize, whiteSpace:'nowrap', display:'inline-block', maxWidth:'100%' }}>
-      {children}
-    </span>
-  );
-}
-
-function KpiCard({ label, value, sub, Icon, stripeColor, iconBg, iconColor, progPct, delay }) {
-  return (
-    <div className="abk-anim-fade-up" style={{
+    <div className={`abk-anim-fade-up ${className}`.trim()} style={{
       background:'var(--card)', border:'1px solid var(--border)',
       borderRadius:14, padding:'1.1rem 1.1rem .9rem',
       position:'relative', overflow:'hidden',
       transition:'background .3s, border-color .3s', animationDelay:delay,
+      boxShadow:'0 1px 4px rgba(0,0,0,.06)',
     }}>
       <div style={{ position:'absolute', top:0, left:0, right:0, height:3, background:stripeColor }} />
+
       <div style={{
         width:32, height:32, borderRadius:8, background:iconBg,
         display:'flex', alignItems:'center', justifyContent:'center',
@@ -297,9 +255,11 @@ function KpiCard({ label, value, sub, Icon, stripeColor, iconBg, iconColor, prog
       }}>
         <Icon size={15} color={iconColor} />
       </div>
-      <div className="abk-serif" style={{ marginBottom:4, lineHeight:1.15 }}>
-        <FitText max={24} min={13} style={{ fontWeight:700, color:iconColor, letterSpacing:-0.3 }}>{value}</FitText>
-      </div>
+      <div className="abk-serif" style={{
+        fontSize:24, fontWeight:700, color:iconColor, letterSpacing:-0.3,
+        marginBottom:4, whiteSpace:'nowrap', overflow:'hidden',
+        textOverflow:'ellipsis', lineHeight:1.15,
+      }}>{value}</div>
       <div style={{ fontSize:11, color:'var(--ink-light)', fontWeight:400 }}>{label}</div>
       <div style={{ fontSize:10.5, color:'var(--ink-faint)', fontWeight:300, marginTop:1 }}>{sub}</div>
       <div style={{ height:2, background:'var(--cream-deep)', borderRadius:2, overflow:'hidden', marginTop:9 }}>
@@ -587,11 +547,11 @@ export default function Dashboard({ dark }) {
           <KpiCard label={t('dashboard.todayRevenue')} value={`$${fmt(todayRev)}`}
             sub={`${todayCount} ${t('dashboard.salesToday')}`} Icon={DollarSign}
             stripeColor="var(--green)" iconBg="var(--green-bg)" iconColor="var(--green)"
-            progPct={todayRev > 0 ? 68 : 2} delay=".06s" />
+            progPct={todayRev > 0 ? 68 : 2} delay=".06s" className="abk-dash-kpi-full" />
           <KpiCard label={t('dashboard.totalRevenue')} value={`$${fmt(totalRev)}`}
             sub={`${totalCount} ${t('dashboard.totalSales')}`} Icon={TrendingUp}
             stripeColor="var(--blue)" iconBg="var(--blue-bg)" iconColor="var(--blue)"
-            progPct={82} delay=".13s" />
+            progPct={82} delay=".13s" className="abk-dash-kpi-full" />
           <KpiCard label={t('dashboard.totalProducts')} value={products.length}
             sub={`${inStock} ${t('dashboard.inStock')}`} Icon={Package}
             stripeColor="var(--purple)" iconBg="var(--purple-bg)" iconColor="var(--purple)"
