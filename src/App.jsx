@@ -13,17 +13,35 @@
  *  page and sidebar so they can adapt their UI accordingly.
  * ─────────────────────────────────────────────────────────────────────────
  */
-import { useState, useEffect } from 'react';
-import Login        from './pages/Login';
-import Layout       from './components/Layout';
-import Dashboard    from './pages/Dashboard';
-import Products     from './pages/Products';
-import Sales        from './pages/Sales';
-import Finance      from './pages/Finance';
-import Analytics    from './pages/Analytics';
-import StockHistory from './pages/StockHistory';
-import UserAccess   from './pages/UserAccess';
-import Loans        from './pages/Loans';
+import { useState, useEffect, lazy, Suspense } from 'react';
+import Login  from './pages/Login';
+import Layout from './components/Layout';
+
+/**
+ * Route-based code splitting.
+ *
+ * WHY: all 9 pages used to be imported eagerly here, which meant every one
+ * of them — including Analytics (which pulls in the whole chart.js library)
+ * and every admin-only page — got bundled into a single ~793KB JS chunk
+ * (228KB gzipped) that shipped on first load to EVERY user, including
+ * WORKERs who by WORKER_ALLOWED_PAGES below can only ever reach
+ * products/sales/loans. `React.lazy()` makes Vite split each page into its
+ * own chunk, fetched only the first time that page is actually rendered —
+ * so a Worker's initial bundle no longer includes Finance, Analytics,
+ * StockHistory, or UserAccess at all.
+ *
+ * Login is kept as a static import since it's needed immediately on first
+ * paint for anyone who isn't logged in yet — lazy-loading it would just add
+ * a network round-trip before the login screen can even appear.
+ */
+const Dashboard    = lazy(() => import('./pages/Dashboard'));
+const Products     = lazy(() => import('./pages/Products'));
+const Sales        = lazy(() => import('./pages/Sales'));
+const Finance      = lazy(() => import('./pages/Finance'));
+const Analytics    = lazy(() => import('./pages/Analytics'));
+const StockHistory = lazy(() => import('./pages/StockHistory'));
+const UserAccess   = lazy(() => import('./pages/UserAccess'));
+const Loans        = lazy(() => import('./pages/Loans'));
 
 const BACKEND = import.meta.env.VITE_API_URL?.replace('/api', '') || 'https://neba-backend.onrender.com';
 
@@ -161,8 +179,24 @@ export default function App() {
       dark={dark}
       onDarkToggle={() => setDark(d => !d)}
     >
-      {/* Render page — fallback to Sales for workers, Dashboard for admins */}
-      {pages[current] || (isWorker ? <Sales dark={dark} user={user} /> : <Dashboard dark={dark} user={user} />)}
+      {/* Suspense fallback covers the brief moment a page's own chunk is
+          being fetched — only happens once per page per session, since the
+          browser caches the chunk after that. */}
+      <Suspense fallback={<PageLoadingFallback dark={dark} />}>
+        {/* Render page — fallback to Sales for workers, Dashboard for admins */}
+        {pages[current] || (isWorker ? <Sales dark={dark} user={user} /> : <Dashboard dark={dark} user={user} />)}
+      </Suspense>
     </Layout>
+  );
+}
+
+function PageLoadingFallback({ dark }) {
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      minHeight: '60vh', color: dark ? '#9CA3AF' : '#6B7280', fontSize: 13,
+    }}>
+      Loading…
+    </div>
   );
 }
