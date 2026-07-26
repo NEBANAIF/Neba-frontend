@@ -14,7 +14,7 @@ export default defineConfig({
 
       // Static files already in /public that aren't referenced from JS/CSS
       // still need to be precached explicitly.
-      includeAssets: ['favicon.svg', 'icons.svg', 'stock.jpg', 'apple-touch-icon.png'],
+      includeAssets: ['stock.jpg', 'apple-touch-icon.png'],
 
       manifest: {
         name: 'Neba ERP',
