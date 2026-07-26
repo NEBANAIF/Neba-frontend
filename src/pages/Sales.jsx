@@ -87,6 +87,7 @@ const SALES_CSS = `
   @keyframes abkSScaleIn { from { opacity:0; transform:scale(.94) } to { opacity:1; transform:scale(1) } }
   @keyframes abkSBarGrow { from { transform:scaleX(0) } to { transform:scaleX(1) } }
   @keyframes abkSToast   { 0%{opacity:0;transform:translateY(-12px)} 10%{opacity:1;transform:translateY(0)} 85%{opacity:1} 100%{opacity:0} }
+  @keyframes spin { to { transform:rotate(360deg) } }
 
   .abk-sales .abk-anim-fade-up  { opacity:0; animation:abkSFadeUp  .45s ease both; }
   .abk-sales .abk-anim-fade-in  { opacity:0; animation:abkSFadeIn  .45s ease both; }
@@ -248,15 +249,16 @@ function BtnPrimary({ onClick, disabled, children, color = 'var(--green)' }) {
   );
 }
 
-function BtnSecondary({ onClick, children }) {
+function BtnSecondary({ onClick, children, disabled }) {
   return (
-    <button onClick={onClick} style={{
+    <button onClick={onClick} disabled={disabled} style={{
       flex:1, padding:'10px 0', background:'var(--cream-deep)', color:'var(--ink-mid)',
       border:'1px solid var(--border)', borderRadius:11, fontSize:13, fontWeight:500,
-      cursor:'pointer', transition:'background .15s', fontFamily:'DM Sans,sans-serif',
+      cursor:disabled ? 'not-allowed' : 'pointer', opacity:disabled ? .5 : 1,
+      transition:'background .15s', fontFamily:'DM Sans,sans-serif',
     }}
-      onMouseEnter={e => e.currentTarget.style.background = 'var(--border)'}
-      onMouseLeave={e => e.currentTarget.style.background = 'var(--cream-deep)'}
+      onMouseEnter={e => { if (!disabled) e.currentTarget.style.background = 'var(--border)'; }}
+      onMouseLeave={e => { e.currentTarget.style.background = 'var(--cream-deep)'; }}
     >{children}</button>
   );
 }
@@ -403,7 +405,6 @@ function ProductAutocomplete({ products, value, onChange, placeholder }) {
                 <div style={{ fontWeight: 500, fontSize: 13 }}>{p.name}</div>
                 <div style={{ fontSize: 11, color: 'var(--ink-faint)', fontFamily: 'monospace' }}>Stock: {p.stock}</div>
               </div>
-              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--green)', flexShrink: 0, marginLeft: 8 }}>${p.price}</div>
             </div>
           ))}
         </div>
@@ -451,6 +452,8 @@ export default function Sales({ dark, user }) {
   const [showModal,      setShowModal]      = useState(false);
   const [saving,         setSaving]         = useState(false);
   const [deleteConfirm,  setDeleteConfirm]  = useState(null);
+  const [deleting,       setDeleting]       = useState(false);
+  const [deleteError,    setDeleteError]    = useState('');
   const [successMsg,     setSuccessMsg]     = useState('');
   const [form,           setForm]           = useState({ productId:'', quantity:1, price:'', customerName:'', paymentStatus:'PAID_FULL', paidAmount:'' });
   const [allTimeSummary, setAllTimeSummary] = useState(null);
@@ -524,8 +527,7 @@ export default function Sales({ dark, user }) {
   function openModal() { setForm({ productId:'', quantity:1, price:'', customerName:'', paymentStatus:'PAID_FULL', paidAmount:'' }); setShowModal(true); }
 
   function handleProductChange(productId) {
-    const p = products.find(p => String(p.id) === String(productId));
-    setForm(f => ({ ...f, productId, price: p ? p.price : '' }));
+    setForm(f => ({ ...f, productId, price: '' }));
   }
 
   async function handleRecord() {
@@ -563,8 +565,17 @@ export default function Sales({ dark, user }) {
   }
 
   async function handleDelete(id) {
-    try { await deleteSale(id); setDeleteConfirm(null); showSuccess(t('sales.successDelete')); await Promise.all([loadAll(), loadTablePage()]); }
-    catch { alert(t('sales.errorDelete')); }
+    setDeleting(true); setDeleteError('');
+    try {
+      await deleteSale(id);
+      setDeleteConfirm(null);
+      showSuccess(t('sales.successDelete'));
+      await Promise.all([loadAll(), loadTablePage()]);
+    } catch (e) {
+      setDeleteError(e.message || t('sales.errorDelete'));
+    } finally {
+      setDeleting(false);
+    }
   }
 
   const selectedProduct = products.find(p => String(p.id) === String(form.productId));
@@ -854,7 +865,7 @@ export default function Sales({ dark, user }) {
                     {isAdmin && (
                       <td className="abk-td-actions" style={{ padding:'11px 14px' }}>
                         {s.paymentStatus !== 'PARTIAL_LOAN' && (s.remainingLoan ?? 0) <= 0 && (
-                          <button onClick={() => setDeleteConfirm(s)} style={{
+                          <button onClick={() => { setDeleteError(''); setDeleteConfirm(s); }} style={{
                             width:28, height:28, borderRadius:8, border:'1px solid var(--red-border)',
                             background:'var(--red-bg)', color:'var(--red-text)',
                             display:'inline-flex', alignItems:'center', justifyContent:'center',
@@ -1084,7 +1095,7 @@ export default function Sales({ dark, user }) {
             MODAL: Delete Confirm
         ══════════════════════════════════════════════════════════════════ */}
         {deleteConfirm && (
-          <Modal onClose={() => setDeleteConfirm(null)} maxWidth={360}>
+          <Modal onClose={() => { if (!deleting) { setDeleteConfirm(null); setDeleteError(''); } }} maxWidth={360}>
             <div style={{ padding:'2rem 1.6rem 1.4rem', textAlign:'center' }}>
               <div style={{ width:52, height:52, borderRadius:'50%', background:'var(--red-bg)', border:'2px solid var(--red-border)', display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 14px' }}>
                 <Trash2 size={22} style={{ color:'var(--red-text)' }} />
@@ -1096,10 +1107,19 @@ export default function Sales({ dark, user }) {
               <p style={{ fontSize:12, color:'var(--ink-faint)', marginBottom:4, fontWeight:300 }}>
                 {t('sales.total')}: <span className="abk-serif" style={{ fontWeight:600, color:'var(--green)', fontSize:14 }}>${fmt(deleteConfirm.total)}</span>
               </p>
-              <p style={{ fontSize:11, color:'var(--blue)', marginBottom:20, fontWeight:300 }}>{t('sales.stockRestored')}</p>
+              <p style={{ fontSize:11, color:'var(--blue)', marginBottom:deleteError ? 8 : 20, fontWeight:300 }}>{t('sales.stockRestored')}</p>
+              {deleteError && (
+                <p style={{ fontSize:12, color:'var(--red-text)', background:'var(--red-bg)', border:'1px solid var(--red-border)', borderRadius:8, padding:'7px 10px', marginBottom:16, fontWeight:400 }}>
+                  {deleteError}
+                </p>
+              )}
               <div style={{ display:'flex', gap:10 }}>
-                <BtnSecondary onClick={() => setDeleteConfirm(null)}>{t('ui.cancel')}</BtnSecondary>
-                <BtnPrimary onClick={() => handleDelete(deleteConfirm.id)} color="#c53030">{t('ui.delete')}</BtnPrimary>
+                <BtnSecondary onClick={() => { setDeleteConfirm(null); setDeleteError(''); }} disabled={deleting}>{t('ui.cancel')}</BtnSecondary>
+                <BtnPrimary onClick={() => handleDelete(deleteConfirm.id)} disabled={deleting} color="#c53030">
+                  {deleting
+                    ? <><RefreshCw size={13} style={{ animation:'spin 1s linear infinite' }} /> {t('ui.deleting') || 'Deleting…'}</>
+                    : t('ui.delete')}
+                </BtnPrimary>
               </div>
             </div>
           </Modal>

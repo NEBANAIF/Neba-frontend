@@ -88,6 +88,7 @@ const PRODUCTS_CSS = `
   @keyframes abkFadeIn   { from { opacity:0 } to { opacity:1 } }
   @keyframes abkScaleIn  { from { opacity:0; transform:scale(.94) } to { opacity:1; transform:scale(1) } }
   @keyframes abkBarGrow  { from { transform:scaleX(0) } to { transform:scaleX(1) } }
+  @keyframes spin { to { transform:rotate(360deg) } }
 
   .abk-prod .abk-anim-fade-up  { opacity:0; animation:abkFadeUp  .45s ease both; }
   .abk-prod .abk-anim-fade-in  { opacity:0; animation:abkFadeIn  .45s ease both; }
@@ -184,7 +185,7 @@ const PRODUCTS_CSS = `
 
 `;
 
-const EMPTY = { name:'',price:'',cost:'',stock:'',minStock:'30',description:'' };
+const EMPTY = { name:'',cost:'',stock:'',minStock:'30',description:'' };
 
 /* ── tiny helpers ─────────────────────────────────────────────────────────── */
 function Pill({ children, bg, color, border }) {
@@ -295,15 +296,16 @@ function BtnPrimary({ onClick, disabled, children, color = 'var(--green)', style
   );
 }
 
-function BtnSecondary({ onClick, children }) {
+function BtnSecondary({ onClick, children, disabled }) {
   return (
-    <button onClick={onClick} style={{
+    <button onClick={onClick} disabled={disabled} style={{
       flex:1, padding:'10px 0', background:'var(--cream-deep)', color:'var(--ink-mid)',
       border:'1px solid var(--border)', borderRadius:11, fontSize:13, fontWeight:500,
-      cursor:'pointer', transition:'background .15s', fontFamily:'DM Sans,sans-serif',
+      cursor:disabled ? 'not-allowed' : 'pointer', opacity:disabled ? .5 : 1,
+      transition:'background .15s', fontFamily:'DM Sans,sans-serif',
     }}
-      onMouseEnter={e => e.currentTarget.style.background = 'var(--border)'}
-      onMouseLeave={e => e.currentTarget.style.background = 'var(--cream-deep)'}
+      onMouseEnter={e => { if (!disabled) e.currentTarget.style.background = 'var(--border)'; }}
+      onMouseLeave={e => { e.currentTarget.style.background = 'var(--cream-deep)'; }}
     >{children}</button>
   );
 }
@@ -375,11 +377,8 @@ function ProductAutocomplete({ products, value, onChange, placeholder }) {
               <div>
                 <div style={{ fontWeight:500 }}>{p.name}</div>
               </div>
-              <div style={{ fontSize:11, color:'var(--ink-light)', textAlign:'right' }}>
-                <div style={{ fontWeight:500 }}>${p.price}</div>
-                <div style={{ color: p.stock === 0 ? 'var(--red-text)' : p.stock <= (p.minStock||30) ? 'var(--amber)' : 'var(--ink-faint)' }}>
-                  Stock: {p.stock}
-                </div>
+              <div style={{ fontSize:11, color: p.stock === 0 ? 'var(--red-text)' : p.stock <= (p.minStock||30) ? 'var(--amber)' : 'var(--ink-faint)', textAlign:'right', fontWeight:500 }}>
+                Stock: {p.stock}
               </div>
             </div>
           ))}
@@ -436,6 +435,8 @@ export default function Products({ dark, user }) {
   const [form,          setForm]          = useState(EMPTY);
   const [saving,        setSaving]        = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [deleting,      setDeleting]      = useState(false);
+  const [deleteError,   setDeleteError]   = useState('');
   const [stockModal,    setStockModal]    = useState(null);
   const [stockMode,     setStockMode]     = useState('add');
   const [stockQty,      setStockQty]      = useState('');
@@ -464,15 +465,15 @@ export default function Products({ dark, user }) {
   function openCreate() { setEditProduct(null); setForm(EMPTY); setShowModal(true); }
   function openEdit(p) {
     setEditProduct(p);
-    setForm({ name:p.name||'', price:p.price??'', cost:p.cost??'', stock:p.stock??'', minStock:p.minStock??30, description:p.description||'' });
+    setForm({ name:p.name||'', cost:p.cost??'', stock:p.stock??'', minStock:p.minStock??30, description:p.description||'' });
     setShowModal(true);
   }
 
   async function handleSave() {
-    if (!form.name || form.price === '') { alert('Name and Price are required.'); return; }
+    if (!form.name) { alert('Name is required.'); return; }
     setSaving(true);
     try {
-      const payload = { name:form.name, price:parseFloat(form.price), cost:form.cost === '' ? null : parseFloat(form.cost), stock:parseInt(form.stock)||0, minStock:parseInt(form.minStock)||30, description:form.description };
+      const payload = { name:form.name, cost:form.cost === '' ? null : parseFloat(form.cost), stock:parseInt(form.stock)||0, minStock:parseInt(form.minStock)||30, description:form.description };
       if (editProduct) {
         const updated = await updateProduct(editProduct.id, payload);
         setProducts(prev => prev.map(p => p.id === editProduct.id ? updated : p));
@@ -481,13 +482,21 @@ export default function Products({ dark, user }) {
         setProducts(prev => [created, ...prev]);
       }
       setShowModal(false);
-    } catch (e) { alert(e.response?.data?.message || 'Failed to save product.'); }
+    } catch (e) { alert(e.message || 'Failed to save product.'); }
     finally { setSaving(false); }
   }
 
   async function handleDelete(id) {
-    try { await deleteProduct(id); setProducts(prev => prev.filter(p => p.id !== id)); setDeleteConfirm(null); }
-    catch { alert('Failed to delete product.'); }
+    setDeleting(true); setDeleteError('');
+    try {
+      await deleteProduct(id);
+      setProducts(prev => prev.filter(p => p.id !== id));
+      setDeleteConfirm(null);
+    } catch (e) {
+      setDeleteError(e.message || 'Failed to delete product. Please try again.');
+    } finally {
+      setDeleting(false);
+    }
   }
 
   async function handleAdjustStock() {
@@ -498,11 +507,9 @@ export default function Products({ dark, user }) {
       const updated = await addStock(stockModal.id, stockMode === 'subtract' ? -qty : qty, stockReason || (stockMode === 'add' ? 'Stock addition' : 'Stock subtraction'), 'Admin');
       setProducts(prev => prev.map(p => p.id === updated.id ? updated : p));
       setStockModal(null); setStockQty(''); setStockReason('');
-    } catch (e) { alert(e.response?.data?.message || 'Failed to adjust stock.'); }
+    } catch (e) { alert(e.message || 'Failed to adjust stock.'); }
   }
 
-  const margin = form.price && form.cost && parseFloat(form.price) > 0
-    ? (((parseFloat(form.price) - parseFloat(form.cost)) / parseFloat(form.price)) * 100).toFixed(1) : null;
 
   const previewStock = stockModal && stockQty && parseInt(stockQty) > 0
     ? stockMode === 'add' ? stockModal.stock + parseInt(stockQty) : stockModal.stock - parseInt(stockQty)
@@ -636,7 +643,6 @@ export default function Products({ dark, user }) {
               {/* colgroup — controls per-column widths on mobile via CSS col selectors */}
               <colgroup>
                 <col />{/* Name */}
-                <col />{/* Price */}
                 {isAdmin && <col />}{/* Cost — admin only */}
                 <col />{/* Stock */}
                 <col />{/* Status */}
@@ -646,7 +652,6 @@ export default function Products({ dark, user }) {
                 <tr style={{ background:'var(--cream-deep)', borderBottom:'1px solid var(--border)' }}>
                   {[
                     { label: t('sales.product') },
-                    { label: t('products.sellingPrice') },
                     ...(isAdmin ? [{ label: t('products.costPrice'), cls: 'abk-prod-col-cost' }] : []),
                     { label: t('products.currentStock') },
                     { label: 'Status' },
@@ -659,7 +664,7 @@ export default function Products({ dark, user }) {
               <tbody>
                 {paginated.length === 0 ? (
                   <tr>
-                    <td colSpan={isAdmin ? 6 : 5} style={{ textAlign:'center', padding:'3.5rem 0' }}>
+                    <td colSpan={isAdmin ? 5 : 4} style={{ textAlign:'center', padding:'3.5rem 0' }}>
                       <Package size={34} style={{ color:'var(--border)', margin:'0 auto 10px', display:'block' }} />
                       <p style={{ color:'var(--ink-faint)', fontSize:13, fontWeight:300 }}>
                         {search || statusFilter !== 'ALL' ? t('products.noProductsFilter') : t('products.noProductsYet')}
@@ -674,12 +679,6 @@ export default function Products({ dark, user }) {
                       <td data-label="Product" style={{ padding:'11px 14px' }}>
                         <div style={{ fontSize:13, fontWeight:500, color:'var(--ink)' }}>{p.name}</div>
                         {p.description && <div style={{ fontSize:11, color:'var(--ink-faint)', marginTop:2, maxWidth:150, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', fontWeight:300 }}>{p.description}</div>}
-                      </td>
-                      {/* Selling price */}
-                      <td data-label="Price" style={{ padding:'11px 14px' }}>
-                        <span className="abk-serif" style={{ fontSize:14, fontWeight:500, color:'var(--ink)' }}>
-                          ${(p.price ?? 0).toLocaleString(undefined, { minimumFractionDigits:2, maximumFractionDigits:2 })}
-                        </span>
                       </td>
                       {/* Cost price — admin only */}
                       {isAdmin && (
@@ -709,7 +708,7 @@ export default function Products({ dark, user }) {
                               </button>
                               {/* Delete — ADMIN only */}
                               {isAdmin && (
-                                <button onClick={() => setDeleteConfirm(p)} className="abk-btn-icon" style={{ width:28, height:28, background:'var(--red-bg)', color:'var(--red-text)', border:'1px solid var(--red-border)' }} title="Delete">
+                                <button onClick={() => { setDeleteError(''); setDeleteConfirm(p); }} className="abk-btn-icon" style={{ width:28, height:28, background:'var(--red-bg)', color:'var(--red-text)', border:'1px solid var(--red-border)' }} title="Delete">
                                   <Trash2 size={12} />
                                 </button>
                               )}
@@ -777,33 +776,13 @@ export default function Products({ dark, user }) {
                 <input value={form.name} onChange={e => setForm(f => ({ ...f, name:e.target.value }))} placeholder={t('products.namePlaceholder')} className="abk-input" />
               </div>
 
-              {isAdmin ? (
-                <div className="abk-prod-modal-grid" style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
-                  <div>
-                    <label className="abk-label">{t('products.sellingPrice')} *</label>
-                    <input type="number" min="0" step="0.01" value={form.price} onChange={e => setForm(f => ({ ...f, price:e.target.value }))} placeholder="0.00" className="abk-input" />
-                  </div>
-                  <div>
-                    <label className="abk-label">{t('products.costPrice')}</label>
-                    <input type="number" min="0" step="0.01" value={form.cost} onChange={e => setForm(f => ({ ...f, cost:e.target.value }))} placeholder="0.00" className="abk-input" />
-                  </div>
-                </div>
-              ) : (
+              {isAdmin && (
                 <div>
-                  <label className="abk-label">{t('products.sellingPrice')} *</label>
-                  <input type="number" min="0" step="0.01" value={form.price} onChange={e => setForm(f => ({ ...f, price:e.target.value }))} placeholder="0.00" className="abk-input" />
+                  <label className="abk-label">{t('products.costPrice')}</label>
+                  <input type="number" min="0" step="0.01" value={form.cost} onChange={e => setForm(f => ({ ...f, cost:e.target.value }))} placeholder="0.00" className="abk-input" />
                 </div>
               )}
 
-              {/* Profit margin — admin only, since it's derived from cost */}
-              {isAdmin && margin && (
-                <div style={{ background:'var(--green-bg)', border:'1px solid rgba(29,158,117,.25)', borderRadius:10, padding:'10px 14px', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-                  <span style={{ fontSize:12, color:'var(--green)', fontWeight:500 }}>{t('products.profitMargin')}</span>
-                  <span className="abk-serif" style={{ fontSize:14, fontWeight:600, color:'var(--green)' }}>
-                    ${(parseFloat(form.price) - parseFloat(form.cost)).toFixed(2)} <span style={{ fontWeight:400, fontSize:12 }}>({margin}%)</span>
-                  </span>
-                </div>
-              )}
 
               <div className="abk-prod-modal-grid" style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
                 <div>
@@ -925,7 +904,7 @@ export default function Products({ dark, user }) {
 
         {/* ── Delete Confirm ── */}
         {deleteConfirm && (
-          <Modal onClose={() => setDeleteConfirm(null)} maxWidth={360}>
+          <Modal onClose={() => { if (!deleting) { setDeleteConfirm(null); setDeleteError(''); } }} maxWidth={360}>
             <div style={{ padding:'2rem 1.6rem 1.4rem', textAlign:'center' }}>
               <div style={{ width:52, height:52, borderRadius:'50%', background:'var(--red-bg)', border:'2px solid var(--red-border)', display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 14px' }}>
                 <Trash2 size={22} style={{ color:'var(--red-text)' }} />
@@ -935,10 +914,19 @@ export default function Products({ dark, user }) {
                 {t('products.deleteConfirm')}{' '}
                 <strong style={{ color:'var(--ink)', fontWeight:500 }}>"{deleteConfirm.name}"</strong>?
               </p>
-              <p style={{ fontSize:11, color:'var(--ink-faint)', marginBottom:20, fontWeight:300 }}>{t('products.cannotUndo')}</p>
+              <p style={{ fontSize:11, color:'var(--ink-faint)', marginBottom:deleteError ? 8 : 20, fontWeight:300 }}>{t('products.cannotUndo')}</p>
+              {deleteError && (
+                <p style={{ fontSize:12, color:'var(--red-text)', background:'var(--red-bg)', border:'1px solid var(--red-border)', borderRadius:8, padding:'7px 10px', marginBottom:16, fontWeight:400 }}>
+                  {deleteError}
+                </p>
+              )}
               <div style={{ display:'flex', gap:10 }}>
-                <BtnSecondary onClick={() => setDeleteConfirm(null)}>{t('ui.cancel')}</BtnSecondary>
-                <BtnPrimary onClick={() => handleDelete(deleteConfirm.id)} color="#c53030">{t('ui.delete')}</BtnPrimary>
+                <BtnSecondary onClick={() => { setDeleteConfirm(null); setDeleteError(''); }} disabled={deleting}>{t('ui.cancel')}</BtnSecondary>
+                <BtnPrimary onClick={() => handleDelete(deleteConfirm.id)} disabled={deleting} color="#c53030">
+                  {deleting
+                    ? <><RefreshCw size={13} style={{ animation:'spin 1s linear infinite' }} /> {t('ui.deleting') || 'Deleting…'}</>
+                    : t('ui.delete')}
+                </BtnPrimary>
               </div>
             </div>
           </Modal>
