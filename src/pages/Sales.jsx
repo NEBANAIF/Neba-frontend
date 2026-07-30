@@ -527,7 +527,10 @@ export default function Sales({ dark, user }) {
   function openModal() { setForm({ productId:'', quantity:1, price:'', customerName:'', paymentStatus:'PAID_FULL', paidAmount:'' }); setShowModal(true); }
 
   function handleProductChange(productId) {
-    setForm(f => ({ ...f, productId, price: '' }));
+    const sel = products.find(p => String(p.id) === String(productId));
+    // Default the sale's unit price to the product's selling price —
+    // still editable in case the actual sale price differs (discount, etc.)
+    setForm(f => ({ ...f, productId, price: sel?.price != null ? String(sel.price) : '' }));
   }
 
   async function handleRecord() {

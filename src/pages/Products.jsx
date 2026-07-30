@@ -185,7 +185,7 @@ const PRODUCTS_CSS = `
 
 `;
 
-const EMPTY = { name:'',cost:'',stock:'',minStock:'30',description:'' };
+const EMPTY = { name:'',price:'',cost:'',stock:'',minStock:'30',description:'' };
 
 /* ── tiny helpers ─────────────────────────────────────────────────────────── */
 function Pill({ children, bg, color, border }) {
@@ -465,15 +465,16 @@ export default function Products({ dark, user }) {
   function openCreate() { setEditProduct(null); setForm(EMPTY); setShowModal(true); }
   function openEdit(p) {
     setEditProduct(p);
-    setForm({ name:p.name||'', cost:p.cost??'', stock:p.stock??'', minStock:p.minStock??30, description:p.description||'' });
+    setForm({ name:p.name||'', price:p.price??'', cost:p.cost??'', stock:p.stock??'', minStock:p.minStock??30, description:p.description||'' });
     setShowModal(true);
   }
 
   async function handleSave() {
     if (!form.name) { alert('Name is required.'); return; }
+    if (form.price === '' || form.price === null || isNaN(parseFloat(form.price))) { alert('Selling price is required.'); return; }
     setSaving(true);
     try {
-      const payload = { name:form.name, cost:form.cost === '' ? null : parseFloat(form.cost), stock:parseInt(form.stock)||0, minStock:parseInt(form.minStock)||30, description:form.description };
+      const payload = { name:form.name, price:parseFloat(form.price), cost:form.cost === '' ? null : parseFloat(form.cost), stock:parseInt(form.stock)||0, minStock:parseInt(form.minStock)||30, description:form.description };
       if (editProduct) {
         const updated = await updateProduct(editProduct.id, payload);
         setProducts(prev => prev.map(p => p.id === editProduct.id ? updated : p));
@@ -643,6 +644,7 @@ export default function Products({ dark, user }) {
               {/* colgroup — controls per-column widths on mobile via CSS col selectors */}
               <colgroup>
                 <col />{/* Name */}
+                <col />{/* Selling Price */}
                 {isAdmin && <col />}{/* Cost — admin only */}
                 <col />{/* Stock */}
                 <col />{/* Status */}
@@ -652,6 +654,7 @@ export default function Products({ dark, user }) {
                 <tr style={{ background:'var(--cream-deep)', borderBottom:'1px solid var(--border)' }}>
                   {[
                     { label: t('sales.product') },
+                    { label: t('products.sellingPrice'), cls: 'abk-prod-col-price' },
                     ...(isAdmin ? [{ label: t('products.costPrice'), cls: 'abk-prod-col-cost' }] : []),
                     { label: t('products.currentStock') },
                     { label: 'Status' },
@@ -664,7 +667,7 @@ export default function Products({ dark, user }) {
               <tbody>
                 {paginated.length === 0 ? (
                   <tr>
-                    <td colSpan={isAdmin ? 5 : 4} style={{ textAlign:'center', padding:'3.5rem 0' }}>
+                    <td colSpan={isAdmin ? 6 : 5} style={{ textAlign:'center', padding:'3.5rem 0' }}>
                       <Package size={34} style={{ color:'var(--border)', margin:'0 auto 10px', display:'block' }} />
                       <p style={{ color:'var(--ink-faint)', fontSize:13, fontWeight:300 }}>
                         {search || statusFilter !== 'ALL' ? t('products.noProductsFilter') : t('products.noProductsYet')}
@@ -679,6 +682,10 @@ export default function Products({ dark, user }) {
                       <td data-label="Product" style={{ padding:'11px 14px' }}>
                         <div style={{ fontSize:13, fontWeight:500, color:'var(--ink)' }}>{p.name}</div>
                         {p.description && <div style={{ fontSize:11, color:'var(--ink-faint)', marginTop:2, maxWidth:150, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', fontWeight:300 }}>{p.description}</div>}
+                      </td>
+                      {/* Selling price */}
+                      <td className="abk-prod-col-price" data-label="Selling Price" style={{ padding:'11px 14px', fontSize:13, fontWeight:600, color:'var(--green)' }}>
+                        ${(p.price ?? 0).toLocaleString(undefined, { minimumFractionDigits:2, maximumFractionDigits:2 })}
                       </td>
                       {/* Cost price — admin only */}
                       {isAdmin && (
@@ -776,12 +783,18 @@ export default function Products({ dark, user }) {
                 <input value={form.name} onChange={e => setForm(f => ({ ...f, name:e.target.value }))} placeholder={t('products.namePlaceholder')} className="abk-input" />
               </div>
 
-              {isAdmin && (
+              <div className="abk-prod-modal-grid" style={{ display:'grid', gridTemplateColumns: isAdmin ? '1fr 1fr' : '1fr', gap:12 }}>
                 <div>
-                  <label className="abk-label">{t('products.costPrice')}</label>
-                  <input type="number" min="0" step="0.01" value={form.cost} onChange={e => setForm(f => ({ ...f, cost:e.target.value }))} placeholder="0.00" className="abk-input" />
+                  <label className="abk-label">{t('products.sellingPrice')} *</label>
+                  <input type="number" min="0" step="0.01" value={form.price} onChange={e => setForm(f => ({ ...f, price:e.target.value }))} placeholder="0.00" className="abk-input" />
                 </div>
-              )}
+                {isAdmin && (
+                  <div>
+                    <label className="abk-label">{t('products.costPrice')}</label>
+                    <input type="number" min="0" step="0.01" value={form.cost} onChange={e => setForm(f => ({ ...f, cost:e.target.value }))} placeholder="0.00" className="abk-input" />
+                  </div>
+                )}
+              </div>
 
 
               <div className="abk-prod-modal-grid" style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>

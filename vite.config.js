@@ -23,7 +23,10 @@ export default defineConfig({
         theme_color: '#0F1F04',
         background_color: '#F0F7E2',
         display: 'standalone',
-        orientation: 'any',
+        // orientation intentionally omitted — an explicit 'any' can get compiled
+        // into an Android orientation mode that ignores the phone's rotation-lock
+        // toggle. Omitting it lets the installed app inherit normal system behavior,
+        // which respects the lock.
         start_url: '/',
         scope: '/',
         icons: [
@@ -64,4 +67,4 @@ export default defineConfig({
       },
     }),
   ],
-})
+}) 
