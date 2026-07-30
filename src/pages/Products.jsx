@@ -471,10 +471,10 @@ export default function Products({ dark, user }) {
 
   async function handleSave() {
     if (!form.name) { alert('Name is required.'); return; }
-    if (form.price === '' || form.price === null || isNaN(parseFloat(form.price))) { alert('Selling price is required.'); return; }
+    if (form.price !== '' && isNaN(parseFloat(form.price))) { alert('Selling price must be a valid number.'); return; }
     setSaving(true);
     try {
-      const payload = { name:form.name, price:parseFloat(form.price), cost:form.cost === '' ? null : parseFloat(form.cost), stock:parseInt(form.stock)||0, minStock:parseInt(form.minStock)||30, description:form.description };
+      const payload = { name:form.name, price:form.price === '' ? null : parseFloat(form.price), cost:form.cost === '' ? null : parseFloat(form.cost), stock:parseInt(form.stock)||0, minStock:parseInt(form.minStock)||30, description:form.description };
       if (editProduct) {
         const updated = await updateProduct(editProduct.id, payload);
         setProducts(prev => prev.map(p => p.id === editProduct.id ? updated : p));
@@ -684,8 +684,8 @@ export default function Products({ dark, user }) {
                         {p.description && <div style={{ fontSize:11, color:'var(--ink-faint)', marginTop:2, maxWidth:150, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', fontWeight:300 }}>{p.description}</div>}
                       </td>
                       {/* Selling price */}
-                      <td className="abk-prod-col-price" data-label="Selling Price" style={{ padding:'11px 14px', fontSize:13, fontWeight:600, color:'var(--green)' }}>
-                        ${(p.price ?? 0).toLocaleString(undefined, { minimumFractionDigits:2, maximumFractionDigits:2 })}
+                      <td className="abk-prod-col-price" data-label="Selling Price" style={{ padding:'11px 14px', fontSize:13, fontWeight:600, color: p.price ? 'var(--green)' : 'var(--ink-faint)' }}>
+                        {p.price ? `$${p.price.toLocaleString(undefined, { minimumFractionDigits:2, maximumFractionDigits:2 })}` : '—'}
                       </td>
                       {/* Cost price — admin only */}
                       {isAdmin && (
@@ -785,7 +785,7 @@ export default function Products({ dark, user }) {
 
               <div className="abk-prod-modal-grid" style={{ display:'grid', gridTemplateColumns: isAdmin ? '1fr 1fr' : '1fr', gap:12 }}>
                 <div>
-                  <label className="abk-label">{t('products.sellingPrice')} *</label>
+                  <label className="abk-label">{t('products.sellingPrice')}</label>
                   <input type="number" min="0" step="0.01" value={form.price} onChange={e => setForm(f => ({ ...f, price:e.target.value }))} placeholder="0.00" className="abk-input" />
                 </div>
                 {isAdmin && (
